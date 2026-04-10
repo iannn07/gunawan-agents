@@ -3,7 +3,14 @@
     "allow": [
       "Bash(python3:*)",
       "Bash(rm -rf architecture-os data-fetching-os deployment-os design-os foundation implementation-os qa-os specs)",
-      "Bash(rm -f standards-index.yml README.md setup.sh CLAUDE.md.backup)"
+      "Bash(rm -f standards-index.yml README.md setup.sh CLAUDE.md.backup)",
+      "Bash(cp \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.gunawan/CLAUDE.md\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/CLAUDE.md\")",
+      "Bash(cp \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.gunawan/standards-index.yml\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/standards-index.yml\")",
+      "Bash(cp \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.gunawan/.mcp.json\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/.mcp.json\")",
+      "Bash(cp \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.mcp.json\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.mcp.json\")",
+      "Bash(cp -r \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.gunawan/.claude/agents/.\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/.claude/agents/\")",
+      "Bash(mkdir -p \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/.claude/commands/roles\")",
+      "Bash(cp -r \"D:/1. Iannn/2. Work/11. Shannon/gunawan-agentic-ai/mobile-gunawan/.gunawan/.claude/commands/roles/.\" \"D:/1. Iannn/2. Work/9. Weeknd/Core/Expo/.gunawan/.claude/commands/roles/\")"
     ]
   }
 }
