@@ -1,0 +1,387 @@
+---
+alwaysApply: true
+---
+# Gunawan — Software Engineering Standards
+
+Project-agnostic development guidelines that apply to every project built under the Gunawan engineering framework. When dropped into an existing or new codebase, the AI agent must **discover** the project's specific tech stack, folder structure, and conventions from the codebase itself — these rules define **how** you write code, not **what** the project is.
+
+## 1. First Contact Protocol
+
+Before writing any code in a new or unfamiliar project, the agent must:
+
+1. Read `package.json` (or equivalent manifest) to identify the tech stack and dependencies
+2. Read `tsconfig.json` / framework config to understand path aliases and build settings
+3. Scan the `src/` (or equivalent) directory to understand the existing folder structure
+4. Identify existing patterns (containers, hooks, utils, types) by reading 2–3 representative files
+5. Check for existing `.env.example` or environment variable documentation
+6. Never assume a structure — always discover it from the codebase
+
+If any of the above is missing or ambiguous, **stop and ask** before proceeding.
+
+## 2. Development Philosophy (Priority Order)
+
+YAGNI (You Aren't Gonna Need It)
+↓
+KISS (Keep It Simple, Stupid)
+↓
+DRY (Don't Repeat Yourself)
+
+**Interpretation**:
+
+1. **YAGNI**: Don't build features until they're actually needed
+2. **KISS**: Choose simple solutions over complex abstractions
+3. **DRY**: Extract common patterns only after they appear 3+ times
+
+## 3. Code Quality Rules
+
+For every code change, the code must be:
+
+- ✅ **Readable**: Self-documenting code with clear intent
+- ✅ **Maintainable**: Easy to modify without breaking changes
+- ✅ **Scalable**: Handles growth in features and data
+- ✅ **Type-safe**: Comprehensive TypeScript usage (strict mode)
+- ❌ **No unnecessary comments**: Code should explain itself
+
+### Negative Space Programming
+
+Always validate inputs with early returns. Reject invalid state as early as possible.
+
+```typescript
+// ✅ Good: Negative space pattern
+export async function processUser(userId: string | undefined) {
+  if (!userId) return null
+  if (userId.length < 10) return null
+
+  const user = await getUser(userId)
+  if (!user) return null
+  if (!user.isActive) return null
+
+  return processActiveUser(user)
+}
+
+// ❌ Avoid: Nested positive conditions
+export async function processUser(userId: string | undefined) {
+  if (userId && userId.length >= 10) {
+    const user = await getUser(userId)
+    if (user && user.isActive) {
+      return processActiveUser(user)
+    }
+  }
+  return null
+}
+```
+
+## 4. Component / UI Principles
+
+These apply to any component-based frontend (React, Vue, Solid, Svelte, etc.):
+
+- **Atomic Design**: Build from small, composable units
+- **Dynamic-first**: Components should be reusable across pages/contexts
+- **Custom Hook-first**: Extract stateful logic into custom hooks when it aids reuse or testability
+- **Optimised complexity**: Prefer sophisticated algorithms over brute-force approaches
+
+### Container Pattern
+
+Separate concerns into layers. The naming and structure depend on the project, but the responsibility split is universal:
+
+| Layer | Purpose | Has State? | Has Handlers? |
+| --- | --- | --- | --- |
+| Page / Route | Auth, fetch, params | ❌ | ❌ |
+| Container | Filter data, orchestrate | Minimal | ❌ |
+| Feature Container | Manage feature state | ✅ | ✅ |
+| Presentation Component | Render UI | Minimal | ❌ |
+
+```typescript
+// ❌ Avoid: Business logic in presentation components
+export function DataTable({ data }) {
+  const filtered = data.filter(...)
+  return <table>...</table>
+}
+
+// ✅ Better: Business logic in containers
+export function TableContainer({ data }) {
+  const filtered = data.filter(...)
+  return <DataTable data={filtered} />
+}
+
+// ❌ Avoid: State management in server components / pages
+export default async function Page() {
+  // Can't use useState in server component
+}
+
+// ✅ Better: State in client containers
+export default function Container() {
+  const [state, setState] = useState()
+}
+```
+
+## 5. Server-Side / Data Fetching Principles
+
+These apply regardless of database client (Supabase, Prisma, Drizzle, raw SQL, REST APIs, etc.):
+
+- **Negative-test first**: Validate all inputs before touching the database
+- **Consistent fetch pattern**: Use the project's established data-fetching utilities — if none exist, propose one
+- **Measure performance**: Instrument database operations with timing (if the project has a timing utility, use it)
+- **Structured logging**: Log every data-fetch result — both success and failure — with a descriptive context string
+- **Structured error handling**: Never let raw errors propagate to the client; return typed error results
+
+```typescript
+export async function getSomethingData(params: FetchParams): Promise<FetchResult<SomeType>> {
+  if (!params.id) return { data: null, error: 'Missing ID' }
+
+  const context = 'Get Something Data'
+
+  try {
+    const result = await databaseClient.query(...)
+
+    if (result.error) {
+      logger(context, JSON.stringify(result.error, null, 2), 'error')
+      return { data: null, error: result.error.message }
+    }
+
+    logger(context, `Fetched ${result.data.length} rows`, 'info')
+    return { data: result.data, error: null }
+  } catch (error) {
+    logger(context, JSON.stringify(error, null, 2), 'error')
+    return { data: null, error: 'Unexpected error' }
+  }
+}
+```
+
+## 6. Naming Conventions
+
+### Files & Directories
+
+| Type | Convention | Example |
+| --- | --- | --- |
+| Components | PascalCase.tsx | `UserProfile.tsx` |
+| Utilities | camelCase.ts | `formatDate.ts` |
+| Constants | UPPER_SNAKE_CASE.ts | `API_ENDPOINTS.ts` |
+| Types | PascalCase.types.ts | `User.types.ts` |
+| Hooks | use*.ts | `useCurrentUser.ts` |
+| Server Actions | camelCase.actions.ts | `getUsers.actions.ts` |
+
+### Variables & Functions
+
+```ts
+// ✅ Booleans: is/has/should prefix
+const isLoading = true
+const hasPermission = checkPermission()
+const shouldRender = isVisible && hasData
+
+// ✅ Functions: verb prefix
+const fetchUserData = async () => { /* ... */ }
+const handleSubmit = () => { /* ... */ }
+const validateForm = (data: FormData) => { /* ... */ }
+
+// ✅ Event handlers: handle/on/save/submit prefix
+const handleClick = () => { /* ... */ }
+const onUserSelect = (user: User) => { /* ... */ }
+const saveUserData = () => { /* ... */ }
+const submitForm = () => { /* ... */ }
+
+// ✅ Arrays: plural nouns
+const users = []
+const filteredItems = []
+
+// ✅ Single items: singular nouns
+const user = users[0]
+const selectedItem = items.find(...)
+```
+
+## 7. Heavy Algorithm or Complex Process
+
+Add numbered step-by-step comments for heavy or complex algorithms. Do **not** add this for simple or self-explanatory code.
+
+```ts
+// [1] Declare the variables for sum functionality
+const a = 1
+const b = 2
+
+// [2] Addition operation
+const sum = a + b
+
+// [3] Multiply it by the totalCount of data fetched from the server
+const final = sum * totalCount
+
+// [4] Return the result
+return final
+```
+
+## 8. Input Validation Contract
+
+- Use safe validation (`safeParse()`) — **never** throwing validation (`parse()`) for external data
+- Throwing validation causes unhandled exceptions on bad data; safe validation returns a result object
+- Validate at every system boundary: user input, API responses, database results
+
+```typescript
+// ✅ Safe validation — returns a result object
+const result = schema.safeParse(externalData)
+if (!result.success) {
+  return { data: null, error: result.error }
+}
+return { data: result.data, error: null }
+
+// ❌ Throwing validation — unhandled exception on bad data
+const data = schema.parse(externalData)
+```
+
+- Use the project's established type system (Zod, Valibot, etc.) — discover from `package.json`
+- Database types should come from generated types (Supabase, Prisma, etc.) — never hand-write them
+
+## 9. Error Handling Contract
+
+- Errors must surface to the user via a notification system (Toast, Snackbar, etc.)
+- ❌ No raw errors shown to users
+- ❌ No silent failures — every catch block must log or surface the error
+- ✅ Return typed error objects from server actions / API calls
+
+## 10. Branching & Commit Standard
+
+### Branch Strategy
+
+Discover the project's branching model from existing branches and CI config. The universal rules:
+
+- ❌ No direct pushes to protected branches (`main`, `dev`, `production`)
+- ✅ Feature work on `feature/*` branches, bug fixes on `fix/*`
+- ✅ PRs required for all merges to protected branches
+- ✅ Squash and merge for feature/fix branches
+
+### Conventional Commits (PR Titles + Commits)
+
+Format: `type: description`
+
+| Type | When to use |
+| --- | --- |
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code restructure, no behavior change |
+| `style` | Formatting, naming only |
+| `perf` | Performance improvement |
+| `chore` | Tooling, deps, config |
+| `docs` | Documentation only |
+| `test` | Adding or updating tests |
+
+## 11. Performance Contract
+
+- Assume data volumes will grow from hundreds to millions of rows
+- ❌ No client-side filtering of large datasets
+- ✅ All heavy filtering should be server-side
+- Minimize payload size and avoid unnecessary re-renders
+- Use the framework's built-in optimizations (React.memo, useMemo, useCallback where measurably beneficial — not by default)
+
+## 12. Code Review Focus Areas
+
+| Area | Question |
+| --- | --- |
+| Type Safety | Are all types properly defined? |
+| Error Handling | Are all edge cases covered? |
+| Performance | Any unnecessary computations or re-renders? |
+| Security | Are permissions / auth checked appropriately? |
+| Structure | Does it follow the project's established layering pattern? |
+| Consistency | Does it follow the established patterns in the codebase? |
+
+---
+
+## 13. Agentic AI Governance Addendum
+
+This addendum is **binding** for all AI agents (Cursor, Claude Code, etc.) working on any project using this framework.
+
+### 13.1 Roles & Authority
+
+#### Cursor / Claude Code (Planner + Executor)
+
+- You **plan and execute** application code changes
+- You implement features/bugfixes using the project's established patterns
+- You must discover and follow existing codebase conventions
+
+#### Consultants (ChatGPT / Claude / Gemini — external chat)
+
+- They **review plans** and validate direction and risks
+- They may provide **final SQL / database migrations**
+- They must **not** provide final executable application code (TS/JS/React etc.)
+
+### 13.2 SQL vs Application Code Rule
+
+- ✅ Consultants may provide **final SQL** (migrations, RPCs, query optimizations)
+- ❌ Consultants must NOT provide final executable **application code**
+- Application code changes must follow **PLAN → REVIEW → EXECUTE**
+
+### 13.3 Governance Flow for Application Code (Mandatory)
+
+If a change requires **application code**:
+
+1) **PLAN** (AI writes a fix plan)
+2) **REVIEW** (Consultant or human validates the plan; approves/rejects/amends)
+3) **EXECUTE** (AI executes the approved plan)
+
+#### Fix Plan Minimum Content
+
+- Problem / goal
+- Current vs expected behavior
+- Scope + non-goals (what must not change)
+- Files to change (paths)
+- Approach summary
+- Risks (regressions, performance, audit, UX)
+- Rollback plan
+- Validation checklist (manual steps)
+
+### 13.4 "No Assumptions" Rule (Anti-hallucination)
+
+- ❌ Do NOT assume missing context (schema, outputs, business meaning, performance)
+- ✅ If context is missing, STOP and request it
+- ✅ Prefer extending existing utilities/hooks/types over creating new ones
+- ✅ Read the codebase before proposing changes — never invent patterns that already exist differently
+
+### 13.5 Database Contract
+
+- AI does NOT access production databases directly
+- AI generates SQL / migrations / RPCs for human review and execution
+- Respect the project's established schema conventions (discovered from codebase or docs)
+
+### 13.6 Mutation Contract
+
+- Use the project's established mutation pattern (RPC, ORM, direct query — whatever the project uses)
+- Optimistic UI: **loading-state only** (no speculative data updates)
+- After mutation: revalidate/refresh data as the framework requires
+- If the project requires audit logging, audit must succeed or the operation must fail (fail fast)
+
+### 13.7 Permissions Contract
+
+- Follow the project's established permission model
+- UI hiding is sufficient for display-level access control
+- If the project enforces server-side permission checks, follow that pattern
+
+### 13.8 Cross-Tool Compatibility (Claude Code ↔ Cursor)
+
+This project uses both Cursor and Claude Code. Sessions may be handed off between tools at any point. For handoffs to work cleanly, both tools must operate on the same contracts:
+
+- **Gate format**: Always output `NEWBORN GATE: PASSED / BLOCKED / CLOSED` — never free-form declarations like `[THINKER]`. This is the shared signal the other tool reads to understand session state.
+- **Role state**: Persisted at `.claude/roles/active.md` and `.claude/roles/[role].md`. Both tools read and write these same files. Never store role state elsewhere.
+- **Documentation**: All plan, implementation, and reflection docs must be written to the canonical paths defined in the governance doc (Section 10). These files are the handoff artefacts — the other tool reads them to understand what was done.
+- **Ship checklist**: Neither tool may skip the documentation or reflection checklist items. They are the handoff contract. A task is not done until both the project reflection (`docs/knowledge/reflections/`) and foundation reflection (`.gunawan/foundation/feedback-os/reflections/`) are written or explicitly waived.
+- **Maturity level**: Read from `.claude/roles/[active-role].md` at session start. Claude Code manages maturity progression. Cursor reads and respects the declared level — it does not self-promote.
+
+---
+
+## 14. Fix Plan Template (Copy/Paste)
+
+### Fix Plan
+
+- Problem:
+- Expected behavior:
+- Current behavior:
+- Scope:
+- Non-goals:
+- Files to change:
+- Approach:
+- Risks:
+- Performance impact:
+- Rollback:
+- Validation steps:
+
+---
+
+Last Updated: 13 April 2026
+Version: 1.1
+Maintained By: Gunawan

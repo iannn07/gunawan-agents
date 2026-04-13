@@ -45,9 +45,9 @@ Test a single function in isolation with no rendering, no network, no database.
 - Date/currency/string formatting
 
 ```typescript
-// features/projects/schemas.test.ts
+// features/projects/__tests__/schemas.test.ts
 import { describe, it, expect } from "vitest";
-import { CreateProjectSchema } from "./schemas";
+import { CreateProjectSchema } from "../schemas";
 
 describe("CreateProjectSchema", () => {
   it("accepts valid input", () => {
@@ -95,18 +95,18 @@ Test a Client Component in a jsdom environment. Interactions, state changes, and
 - Async Server Components (use E2E)
 
 ```typescript
-// _components/CreateProjectForm.test.tsx
+// _components/__tests__/CreateProjectForm.test.tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CreateProjectForm } from './CreateProjectForm';
+import { CreateProjectForm } from '../CreateProjectForm';
 
 // Mock the Server Action — component tests never call real server code
-vi.mock('../actions', () => ({
+vi.mock('../../actions', () => ({
   createProject: vi.fn(),
 }));
 
-import { createProject } from '../actions';
+import { createProject } from '../../actions';
 
 describe('CreateProjectForm', () => {
   it('renders the name field and submit button', () => {
@@ -230,29 +230,51 @@ test("tenant A cannot access tenant B projects", async ({ browser }) => {
 
 ```typescript
 // vitest.config.mts
-import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
-import tsconfigPaths from "vite-tsconfig-paths";
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  plugins: [react(), tsconfigPaths()],
+  // Required for React/JSX projects -- prevents "React is not defined"
+  esbuild: {
+    jsx: 'automatic'
+  },
   test: {
-    environment: "jsdom",
+    environment: 'jsdom',
     globals: true,
-    setupFiles: ["./vitest.setup.ts"],
-    exclude: ["e2e/**", "node_modules/**"],
+    setupFiles: ['./vitest.setup.ts'],
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
     coverage: {
-      provider: "v8",
-      reporter: ["text", "lcov"],
-      exclude: ["e2e/**", "**/*.config.*", "**/types/**"]
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['e2e/**', '**/*.config.*', '**/types/**']
+    }
+  },
+  resolve: {
+    alias: {
+      // Must mirror tsconfig.json path aliases
+      // '@': path.resolve(__dirname, './src'),
     }
   }
-});
+})
 ```
 
 ```typescript
 // vitest.setup.ts
-import "@testing-library/jest-dom/vitest";
+import '@testing-library/jest-dom/vitest'
+import { vi } from 'vitest'
+
+// Mock Next.js App Router -- not available in jsdom
+vi.mock('next/navigation', () => ({
+  useRouter: vi.fn(() => ({
+    push: vi.fn(), replace: vi.fn(), back: vi.fn(),
+    forward: vi.fn(), refresh: vi.fn(), prefetch: vi.fn()
+  })),
+  usePathname: vi.fn(() => '/'),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
+  useParams: vi.fn(() => ({})),
+  redirect: vi.fn(),
+  notFound: vi.fn()
+}))
 ```
 
 ### Playwright
@@ -292,9 +314,9 @@ export default defineConfig({
 ```json
 {
   "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "test:coverage": "npx vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug"
@@ -311,26 +333,33 @@ src/
 ├── features/
 │   └── projects/
 │       ├── actions.ts
-│       ├── actions.test.ts          # Unit — pure logic in the action
 │       ├── schemas.ts
-│       ├── schemas.test.ts          # Unit — Zod schema coverage
+│       ├── __tests__/
+│       │   ├── helpers/
+│       │   │   └── mockFactory.ts       # Typed mock factories for this module
+│       │   ├── actions.test.ts          # Unit — pure logic in the action
+│       │   └── schemas.test.ts          # Unit — Zod schema coverage
 │       └── _components/
 │           ├── CreateProjectForm.tsx
-│           └── CreateProjectForm.test.tsx  # Component test
+│           └── __tests__/
+│               ├── helpers/
+│               │   └── mockFactory.ts   # Typed mock factories for this component
+│               └── CreateProjectForm.test.tsx  # Component test
 ├── lib/
 │   └── utils/
 │       ├── format.ts
-│       └── format.test.ts           # Unit — pure formatting functions
+│       └── __tests__/
+│           └── format.test.ts           # Unit — pure formatting functions
 e2e/
-├── auth.spec.ts                     # Auth flows
-├── tenant-isolation.spec.ts         # Tenant boundary tests
-├── projects.spec.ts                 # Project CRUD flows
+├── auth.spec.ts                         # Auth flows
+├── tenant-isolation.spec.ts             # Tenant boundary tests
+├── projects.spec.ts                     # Project CRUD flows
 └── helpers/
-    ├── auth.ts                      # Shared sign-in helpers
-    └── fixtures.ts                  # Test data factories
+    ├── auth.ts                          # Shared sign-in helpers
+    └── fixtures.ts                      # Test data factories
 ```
 
-Colocate unit and component tests with the file they test. E2E tests always in `e2e/` at the project root.
+Tests live in a `__tests__/` folder co-located with the module they test. Each `__tests__/` folder has a `helpers/mockFactory.ts` for typed mock factories. E2E tests always in `e2e/` at the project root — never inside `src/`.
 
 ---
 

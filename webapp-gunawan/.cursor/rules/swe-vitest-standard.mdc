@@ -1,0 +1,565 @@
+---
+alwaysApply: true
+---
+# Vitest Testing Standard
+
+Portable conventions for writing automated tests with Vitest. These patterns are framework-agnostic and apply to any TypeScript/JavaScript project. Adapt the examples to your project's stack.
+
+## 1. Project Setup
+
+### `vitest.config.ts`
+
+```ts
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  // Required for React/JSX projects -- prevents "React is not defined"
+  // Remove if not using JSX
+  esbuild: {
+    jsx: 'automatic'
+  },
+  test: {
+    environment: 'jsdom', // Use 'node' for non-browser projects
+    globals: true,
+    setupFiles: ['./vitest.setup.ts'],
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: ['src/**/*.{ts,tsx}']
+    }
+  },
+  resolve: {
+    alias: {
+      // Must mirror tsconfig.json / vite.config paths
+      // '@': path.resolve(__dirname, './src'),
+    }
+  }
+})
+```
+
+Key settings and why:
+
+- `esbuild.jsx: 'automatic'` -- eliminates the need for `import React` in every file. Required for any project using JSX (React, Preact, Solid).
+- `test.include` targets `__tests__` folders only -- prevents test runners from picking up non-test files.
+- `resolve.alias` must match your project's path aliases exactly, otherwise `vi.mock()` and imports will resolve to different modules.
+
+### `vitest.setup.ts`
+
+Contains global mocks shared across ALL test files. Only put things here that every (or nearly every) test needs.
+
+**For Next.js App Router projects:**
+
+```ts
+import '@testing-library/jest-dom/vitest'
+import { vi } from 'vitest'
+
+vi.mock('next/navigation', () => ({
+  useRouter: vi.fn(() => ({
+    push: vi.fn(), replace: vi.fn(), back: vi.fn(),
+    forward: vi.fn(), refresh: vi.fn(), prefetch: vi.fn()
+  })),
+  usePathname: vi.fn(() => '/'),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
+  useParams: vi.fn(() => ({})),
+  redirect: vi.fn(),
+  notFound: vi.fn()
+}))
+```
+
+**For Next.js Pages Router projects:**
+
+```ts
+import '@testing-library/jest-dom/vitest'
+import { vi } from 'vitest'
+
+vi.mock('next/router', () => ({
+  useRouter: vi.fn(() => ({
+    push: vi.fn(), replace: vi.fn(), back: vi.fn(),
+    query: {}, pathname: '/', asPath: '/',
+    events: { on: vi.fn(), off: vi.fn(), emit: vi.fn() }
+  }))
+}))
+```
+
+**For non-Next.js projects (plain React, Vue, etc.):**
+
+```ts
+import '@testing-library/jest-dom/vitest'
+```
+
+### `package.json` scripts
+
+```json
+{
+  "test": "npx vitest run",
+  "test:watch": "npx vitest",
+  "test:coverage": "npx vitest run --coverage"
+}
+```
+
+The `npx` prefix is **mandatory** when bun is installed as the system runtime. Without it, `bun test` silently intercepts the command and runs bun's own test runner, which lacks Vitest APIs like `vi.mock()`.
+
+If bun is **not** installed, `npx` still works correctly -- it is always safe to include.
+
+## 2. Folder Structure
+
+Tests live in a `__tests__` folder co-located with the module they test. The folder structure mirrors the source module.
+
+```md
+<module-root>/
+  __tests__/
+    helpers/
+      mockFactory.ts             -- reusable typed mock factories for this module
+    [utilName].test.ts            -- pure function tests (Category A)
+    [serverActionOrService].test.ts -- backend/service tests (Category B)
+    [ComponentName].test.tsx      -- component tests (Category C / D)
+  <source-files>/
+    ...
+```
+
+`<module-root>` is wherever your feature code lives. Examples:
+
+- Next.js App Router: `src/app/(group)/feature/`
+- Feature-folder structure: `src/features/auth/`
+- Flat structure: `src/modules/billing/`
+
+The convention works with any folder layout -- the only requirement is that `__tests__/` sits alongside the source code it tests.
+
+## 3. Test Categories & Patterns
+
+### Category A: Pure Utility Tests
+
+For functions with no side effects: validators, formatters, transformers, parsers. **No mocks needed.**
+
+```ts
+import { describe, expect, it } from 'vitest'
+
+import { formatCurrency } from '../utils/formatCurrency'
+
+describe('formatCurrency', () => {
+  it('formats positive number with currency symbol', () => {
+    expect(formatCurrency(1000)).toBe('$1,000.00')
+  })
+
+  it('handles zero', () => {
+    expect(formatCurrency(0)).toBe('$0.00')
+  })
+
+  it('returns fallback for null', () => {
+    expect(formatCurrency(null)).toBe('-')
+  })
+
+  it('returns fallback for undefined', () => {
+    expect(formatCurrency(undefined)).toBe('-')
+  })
+
+  it('handles negative numbers', () => {
+    expect(formatCurrency(-500)).toBe('-$500.00')
+  })
+})
+```
+
+**Edge cases to always test:** valid input, null, undefined, empty string `''`, empty array `[]`, zero, negative numbers, boundary values.
+
+### Category B: Server-Side / Service Tests
+
+For server actions (Next.js), API route handlers, service layers, or any code that calls external services (databases, APIs, file systems). These require **heavy mocking**.
+
+```ts
+// @vitest-environment node
+// ↑ Use this directive when the code under test runs in Node, not the browser
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { createMockRow } from './helpers/mockFactory'
+
+// [1] Declare mock references at file top level
+const dbQueryMock = vi.fn()
+const loggerMock = vi.fn()
+
+// [2] Register all vi.mock() calls BEFORE importing the module under test
+vi.mock('../lib/database', () => ({
+  query: (...args: any[]) => dbQueryMock(...args)
+}))
+
+vi.mock('../lib/logger', () => ({
+  log: (...args: any[]) => loggerMock(...args)
+}))
+
+// [3] Import the module under test AFTER all vi.mock() calls
+import { getUserById } from '../services/userService'
+
+describe('getUserById', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns user on success', async () => {
+    dbQueryMock.mockResolvedValue({ rows: [createMockRow()] })
+
+    const result = await getUserById('user-1')
+
+    expect(result).toEqual(expect.objectContaining({ id: 'user-1' }))
+    expect(dbQueryMock).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT'),
+      expect.arrayContaining(['user-1'])
+    )
+  })
+
+  it('returns null when user not found', async () => {
+    dbQueryMock.mockResolvedValue({ rows: [] })
+
+    const result = await getUserById('nonexistent')
+
+    expect(result).toBeNull()
+  })
+
+  it('returns null and logs on database error', async () => {
+    dbQueryMock.mockRejectedValue(new Error('connection refused'))
+
+    const result = await getUserById('user-1')
+
+    expect(result).toBeNull()
+    expect(loggerMock).toHaveBeenCalled()
+  })
+})
+```
+
+**Supabase-specific chainable mock pattern** (for projects using Supabase):
+
+```ts
+const rpcMock = vi.fn()
+
+const storageMock = {
+  list: vi.fn(),
+  upload: vi.fn(),
+  remove: vi.fn(),
+  download: vi.fn()
+}
+
+const fromMock = vi.fn().mockReturnValue({
+  select: vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockResolvedValue({ data: [], error: null })
+  }),
+  insert: vi.fn().mockReturnValue({
+    select: vi.fn().mockResolvedValue({ data: [], error: null })
+  }),
+  delete: vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: null })
+    })
+  })
+})
+
+vi.mock('@/utils/supabase/server', () => ({
+  createClient: vi.fn(() => Promise.resolve({
+    rpc: rpcMock,
+    from: fromMock,
+    storage: { from: vi.fn().mockReturnValue(storageMock) }
+  }))
+}))
+```
+
+### Category C: Simple Component Tests
+
+For leaf components and containers that primarily render children and pass props. Mock child components as stubs.
+
+```tsx
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+
+import { createMockProps } from './helpers/mockFactory'
+
+vi.mock('../components/ChildWidget', () => ({
+  default: (props: any) => (
+    <div data-testid='child-widget'>
+      <span data-testid='child-label'>{props.label}</span>
+    </div>
+  )
+}))
+
+import ParentComponent from '../components/ParentComponent'
+
+describe('ParentComponent', () => {
+  it('renders child with correct label', () => {
+    render(<ParentComponent {...createMockProps()} />)
+
+    expect(screen.getByTestId('child-label')).toHaveTextContent('Expected Label')
+  })
+
+  it('hides child when disabled', () => {
+    render(<ParentComponent {...createMockProps({ isDisabled: true })} />)
+
+    expect(screen.queryByTestId('child-widget')).not.toBeInTheDocument()
+  })
+})
+```
+
+### Category D: Complex / Orchestrator Component Tests
+
+For components with `useEffect`, async data fetching, multi-step user flows (modals, confirmations), and state management.
+
+```tsx
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { createMockProps } from './helpers/mockFactory'
+
+// [1] Declare mock references
+const submitMock = vi.fn()
+const toastMock = vi.fn()
+
+// [2] Mock all external dependencies
+vi.mock('../services/api', () => ({
+  submitForm: (...args: any[]) => submitMock(...args)
+}))
+
+vi.mock('../lib/toast', () => ({
+  showToast: (...args: any[]) => toastMock(...args)
+}))
+
+vi.mock('../components/ConfirmDialog', () => ({
+  default: (props: any) => {
+    if (!props.open) return null
+
+    return (
+      <div data-testid='confirm-dialog'>
+        <button data-testid='confirm-btn' onClick={props.onConfirm}>Confirm</button>
+        <button data-testid='cancel-btn' onClick={props.onCancel}>Cancel</button>
+      </div>
+    )
+  }
+}))
+
+import FormPage from '../components/FormPage'
+
+describe('FormPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    submitMock.mockResolvedValue({ success: true })
+  })
+
+  // [3] Wrap render in act() for components with useEffect
+  const renderPage = async (overrides = {}) => {
+    let result: ReturnType<typeof render> | undefined
+
+    await act(async () => {
+      result = render(<FormPage {...createMockProps(overrides)} />)
+    })
+
+    return result!
+  }
+
+  // [4] Helper for multi-step flows
+  const triggerSubmitFlow = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('submit-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('confirm-dialog')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-btn'))
+    })
+  }
+
+  it('renders form fields', async () => {
+    await renderPage()
+
+    expect(screen.getByRole('textbox', { name: /email/i })).toBeInTheDocument()
+  })
+
+  it('submits and shows success toast', async () => {
+    await renderPage()
+
+    await triggerSubmitFlow()
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.stringContaining('success'),
+        'success'
+      )
+    })
+  })
+
+  it('shows error toast on failure', async () => {
+    submitMock.mockRejectedValue(new Error('Network error'))
+
+    await renderPage()
+
+    await triggerSubmitFlow()
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.stringContaining('error'),
+        'error'
+      )
+    })
+  })
+})
+```
+
+## 4. Mock Factory Convention
+
+Every module creates its own `__tests__/helpers/mockFactory.ts` with typed factory functions. Each factory has sensible defaults and accepts an `overrides` parameter.
+
+```ts
+import { vi } from 'vitest'
+
+// ────────────────────────────────────────────
+// Domain entity factory -- CUSTOMIZE per module
+// ────────────────────────────────────────────
+interface UserRow {
+  id: string
+  name: string
+  email: string
+  role: 'admin' | 'user'
+}
+
+export function createMockUser(overrides: Partial<UserRow> = {}): UserRow {
+  return {
+    id: 'user-1',
+    name: 'John Doe',
+    email: 'john@example.com',
+    role: 'user',
+    ...overrides
+  }
+}
+
+// ────────────────────────────────────────────
+// Component props factory -- CUSTOMIZE per module
+// ────────────────────────────────────────────
+export function createMockProps(overrides: Record<string, any> = {}) {
+  return {
+    isLoading: false,
+    data: [createMockUser()],
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    ...overrides
+  }
+}
+```
+
+**Naming convention:** `createMock[Entity]()` -- e.g., `createMockOrder()`, `createMockInvoice()`, `createMockSearchParams()`.
+
+## 5. Anti-Patterns
+
+These rules are non-negotiable. Each was discovered through a real failure.
+
+### NEVER use `vi.hoisted()`
+
+Bun's test runner does not support this API. Even when running vitest directly, the pattern is fragile.
+
+```ts
+// ❌ WRONG
+const { mockFn } = vi.hoisted(() => ({ mockFn: vi.fn() }))
+
+// ✅ CORRECT
+const mockFn = vi.fn()
+
+vi.mock('./module', () => ({ fn: (...args: any[]) => mockFn(...args) }))
+```
+
+### NEVER omit `npx` from test scripts
+
+```json
+// ❌ WRONG -- bun silently hijacks this
+{ "test": "vitest run" }
+
+// ✅ CORRECT
+{ "test": "npx vitest run" }
+```
+
+### NEVER rely on `import React` for JSX in tests
+
+```ts
+// ❌ WRONG -- fragile, depends on tsconfig jsx setting
+import React from 'react'
+
+// ✅ CORRECT -- set esbuild.jsx: 'automatic' in vitest.config.ts
+// No React import needed
+```
+
+### NEVER mock framework router/navigation per test file
+
+```ts
+// ❌ WRONG -- duplicated in every test file
+vi.mock('next/navigation', () => ({ useRouter: vi.fn(() => ({ push: vi.fn() })) }))
+
+// ✅ CORRECT -- mock once in vitest.setup.ts
+```
+
+### NEVER use source-relative paths in `vi.mock()`
+
+`vi.mock()` resolves paths relative to the **test file**, not the source file.
+
+```ts
+// Test file location: __tests__/myComponent.test.tsx
+// Source file location: components/MyComponent.tsx
+
+// ❌ WRONG -- this path is relative to the source, not the test
+vi.mock('./MyComponent')
+
+// ✅ CORRECT -- relative to the test file in __tests__/
+vi.mock('../components/MyComponent')
+```
+
+### NEVER render components with `useEffect` without `act()`
+
+```tsx
+// ❌ WRONG -- state updates from useEffect may not flush
+render(<MyComponent />)
+
+// ✅ CORRECT
+await act(async () => {
+  render(<MyComponent />)
+})
+```
+
+### NEVER expect an action to fire from a button that opens a confirmation modal
+
+```ts
+// ❌ WRONG -- the button opens the modal, not triggers the action
+fireEvent.click(screen.getByText('Delete'))
+expect(deleteActionMock).toHaveBeenCalled() // FAILS
+
+// ✅ CORRECT -- two-step flow
+fireEvent.click(screen.getByText('Delete'))                     // opens modal
+await waitFor(() => screen.getByTestId('confirm-btn'))          // wait for modal
+fireEvent.click(screen.getByTestId('confirm-btn'))              // confirm
+await waitFor(() => expect(deleteActionMock).toHaveBeenCalled()) // now it fires
+```
+
+## 6. Naming Conventions
+
+| Element             | Convention                                    | Example                                       |
+| ------------------- | --------------------------------------------- | --------------------------------------------- |
+| Test file           | `[sourceFileName].test.{ts,tsx}`              | `userService.test.ts`                         |
+| Component test file | `[ComponentName].test.tsx`                    | `LoginForm.test.tsx`                          |
+| `describe` block    | Matches exported function or component name   | `describe('getUserById', ...)`                |
+| `it` block          | Starts with verb describing expected behavior | `it('returns null when user not found', ...)` |
+| Mock variable       | `[functionName]Mock`                          | `const fetchUserMock = vi.fn()`               |
+| Factory function    | `createMock[Entity]()`                        | `createMockUser()`                            |
+
+## 7. Execution Order Within a Test File
+
+This order must be followed in every test file:
+
+1. Environment directive (if needed): `// @vitest-environment node`
+2. Imports from `vitest` and testing libraries (`@testing-library/react`, etc.)
+3. Imports from `./helpers/mockFactory`
+4. Top-level mock variable declarations: `const myMock = vi.fn()`
+5. All `vi.mock()` calls (before any module-under-test imports)
+6. Import of the module under test
+7. `describe` block with `beforeEach(() => vi.clearAllMocks())`
+8. Test cases (`it` blocks)
+
+---
+
+Last Updated: 13 April 2026
+Version: 2.0
+Maintained By: Gunawan

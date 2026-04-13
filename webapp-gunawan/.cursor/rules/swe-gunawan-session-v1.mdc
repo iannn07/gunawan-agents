@@ -1,0 +1,146 @@
+---
+alwaysApply: true
+---
+
+# Gunawan — Session Start Protocol
+
+Project-agnostic session boot sequence for AI agents working under the Gunawan engineering framework. This protocol ensures continuity across chat sessions by loading accumulated context from prior work.
+
+## 1. Session Boot Sequence
+
+At the start of every conversation, before responding to anything else:
+
+### Step 1 — Load accumulated context
+
+Read these files in order:
+
+1. `.claude/roles/active.md` — current active role and maturity level
+2. `.claude/roles/[active-role].md` — all accumulated decisions, lessons, and context built across previous sessions
+
+If `.claude/roles/active.md` does not exist, default to Level 0 Born and create it.
+
+### Step 2 — Confirm ready state
+
+Output this block before your first response:
+
+```
+GUNAWAN EXECUTOR: READY
+
+Level:        [current level from role file]
+Active role:  [role from active.md]
+Last session: [date from role file]
+Context:
+  - [key decision or context point 1]
+  - [key decision or context point 2]
+  - [key decision or context point 3]
+Checkpoint:   PASSED
+```
+
+### Step 3 — Load foundation context
+
+After restoring session state, load context in this exact order (mirrors CLAUDE.md foundation loading — both tools must follow this sequence):
+
+1. `CLAUDE.md` — project constitution
+2. `.gunawan/foundation/human-intent-os/` — values, philosophy, decision rules
+3. `.gunawan/foundation/agent-foundation-os/` — runtime behaviour, task lifecycle
+4. `.gunawan/foundation/role-definition-os/[active-role]/` — role-specific rules
+5. `.gunawan/foundation/design-os/` — relevant design artifacts
+6. `.gunawan/foundation/build-os/` — relevant implementation standards
+7. `.gunawan/foundation/feedback-os/` — reflection and learning rules
+8. `docs/knowledge/README.md` — current project state, ADRs, guardrails
+9. Current project specs and codebase context
+10. The current user request
+
+If required context from layers 1–4 is missing, stop and report which layer is missing. Do not improvise high-risk decisions without this foundation.
+
+### Step 4 — Proceed
+
+Ask the user what they need, or respond to the opening message if one was provided.
+
+## 2. Accumulated Context Convention
+
+The `.claude/roles/` directory is the institutional memory for AI agents:
+
+```
+.claude/
+  roles/
+    active.md                   # pointer to current role + maturity level
+    software-engineer.md        # accumulated context for SWE role
+    system-architect.md         # accumulated context for architect role
+    product-strategist.md       # accumulated context for product role
+    ...
+```
+
+### Role File Format
+
+Each role file should contain:
+
+- **Last session date** — when the role was last active
+- **Maturity level** — current agent maturity for this role
+- **Active task** — what the agent is currently working on
+- **Key decisions made** — accumulated architectural and implementation decisions
+- **Open questions** — unresolved items from prior sessions
+- **Lessons learned** — patterns that worked, patterns that failed
+
+### Auto-Save Behavior
+
+After every turn where ANY of the following occurred, automatically update `.claude/roles/[active-role].md`:
+
+- A decision was made that affects the codebase or architecture
+- A task was completed (partial or full)
+- A new pattern, anti-pattern, or lesson was identified
+- An assumption was proven wrong
+- The user corrected or redirected the approach
+
+## 3. Auto-Role-Switch Behavior
+
+At the start of every task, before doing any work:
+
+1. **Classify the task** using the table below
+2. **Compare** the required role to the current role in `.claude/roles/active.md`
+3. **If they differ**, automatically switch:
+   - Update `.claude/roles/active.md` to the new role
+   - Load `.claude/roles/[new-role].md` to restore that role's accumulated context
+   - State the switch once: `"Switching to [Role] — [reason]"`
+4. **Proceed** with the work under the correct role
+
+| Task type | Role to switch to |
+| --- | --- |
+| Product intent, user stories, scope definition, roadmap | Product Strategist |
+| Architecture, system design, API contracts, data model | System Architect |
+| Code implementation, bug fixes, file edits, refactors | Software Engineer |
+| Quality review, defect detection, test coverage | QA Reviewer |
+| CI/CD, deployment, infrastructure, environments | DevOps Platform |
+
+**Rules:**
+
+- One role at a time. If a task spans multiple roles, declare each switch as it happens.
+- Mid-task role switch requires explicit re-declaration before continuing.
+- After switching, auto-save applies to the **new** active role file.
+- Never skip the switch because it "seems close enough" — role boundaries are hard constraints.
+
+## 4. Knowledge Base Convention
+
+The `docs/knowledge/` directory is the shared knowledge base for all teammates and AI agents:
+
+```
+docs/knowledge/
+  README.md                       # current project state, what's built, what's next
+  architecture-decisions/          # ADRs for key decisions already made
+  patterns/                        # proven approaches
+  anti-patterns/                   # known failure modes
+  reflections/                     # per-task learning logs
+  postmortems/                     # failure or near-miss analysis
+```
+
+- Read `docs/knowledge/README.md` before starting any task
+- Write a reflection to `docs/knowledge/reflections/` after every significant task
+- Log new architectural decisions to `docs/knowledge/architecture-decisions/`
+- Feature plans go in `docs/plan/<feature>.md`
+- Implementation notes go in `docs/implementation/<feature>.md`
+
+---
+
+Last Updated: 13 April 2026
+Version: 1.0
+Maintained By: Gunawan
