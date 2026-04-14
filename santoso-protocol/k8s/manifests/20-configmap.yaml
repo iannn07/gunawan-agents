@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gunawan-config
+  namespace: gunawan
+data:
+  PAPERCLIP_API_URL: "http://paperclip.gunawan.svc.cluster.local:3100"
+  PAPERCLIP_COMPANY_ID: "2822e5f8-455f-4576-8b82-4cabdda1903e"
+  PAPERCLIP_CEO_AGENT_ID: "84514569-645a-4acc-9501-188ac9c12aa5"
+  WEBHOOK_URL: "https://gunawan-bridge.digital-lab.ai"
+  PORT: "3200"

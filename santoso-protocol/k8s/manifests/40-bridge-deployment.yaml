@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-bridge
+  namespace: gunawan
+  labels:
+    app: telegram-bridge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-bridge
+  template:
+    metadata:
+      labels:
+        app: telegram-bridge
+    spec:
+      containers:
+        - name: telegram-bridge
+          image: docker.io/iannn07/santoso-telegram-bridge:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3200
+          envFrom:
+            - secretRef:
+                name: gunawan-secrets
+            - configMapRef:
+                name: gunawan-config
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3200
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3200
+            initialDelaySeconds: 5
+            periodSeconds: 10

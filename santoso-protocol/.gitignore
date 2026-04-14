@@ -26,3 +26,7 @@ logs/
 # Editor
 .vscode/
 .idea/
+
+# k8s — rendered secrets (never commit) and snapshot tarballs
+k8s/manifests/10-secrets.generated.yaml
+k8s/snapshots/*.tar.gz

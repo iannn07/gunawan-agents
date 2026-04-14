@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: paperclip
+  namespace: gunawan
+  labels:
+    app: paperclip
+spec:
+  serviceName: paperclip
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paperclip
+  template:
+    metadata:
+      labels:
+        app: paperclip
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Intentionally no fsGroup: kubelet's recursive fsGroup chmod sets
+        # the setgid bit (mode 2770) on the PV, which Postgres rejects on
+        # its data dir. We pre-chown the PV to 1000:1000 in seed-pvc.sh so
+        # the container user has direct access without needing fsGroup.
+      containers:
+        - name: paperclip
+          image: docker.io/iannn07/paperclip-gunawan:2026.403.0-patched
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3100
+          env:
+            - name: HOME
+              value: /home/node
+            - name: NODE_ENV
+              value: production
+            # Intentionally NO ANTHROPIC_API_KEY here. The `claude` CLI inside
+            # the pod authenticates via the host-mounted ~/.claude/ OAuth
+            # credentials (Claude.ai subscription). Setting an API key would
+            # take precedence over the OAuth session.
+          volumeMounts:
+            - name: paperclip-data
+              mountPath: /home/node/.paperclip
+            - name: claude-credentials
+              mountPath: /home/node/.claude
+            - name: claude-config
+              mountPath: /home/node/.claude.json
+          resources:
+            requests:
+              cpu: "300m"
+              memory: "1536Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          # Liveness probe hits the API, which exercises Postgres.
+          # If pg gets OOM-killed while the node server stays up, this
+          # probe returns 500, kubelet restarts the whole pod, pg comes
+          # back clean. tcpSocket:3100 alone wasn't enough because socat
+          # would keep the port open after pg died.
+          livenessProbe:
+            httpGet:
+              path: /api/companies
+              port: 3100
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3100
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: claude-credentials
+          hostPath:
+            path: /home/santoso/.claude
+            type: Directory
+        - name: claude-config
+          hostPath:
+            path: /home/santoso/.claude.json
+            type: File
+  volumeClaimTemplates:
+    - metadata:
+        name: paperclip-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 2Gi
