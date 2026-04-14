@@ -1,0 +1,46 @@
+version: '3.8'
+
+# Gunawan AI Company — Docker Compose
+# Services:
+#   advisor         → XLSMART Package Advisor (Next.js) on port 3000
+#   telegram-bridge → Santoso Telegram bridge (Express) on port 3200
+#
+# Usage:
+#   cp .env.example .env && nano .env   # fill in your API keys
+#   docker-compose up -d --build
+
+services:
+  advisor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xlsmart-advisor
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  telegram-bridge:
+    build:
+      context: ./telegram-bridge
+      dockerfile: Dockerfile.bridge
+    container_name: santoso-bridge
+    ports:
+      - "3200:3200"
+    env_file:
+      - .env
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3200/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - advisor

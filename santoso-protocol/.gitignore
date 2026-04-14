@@ -1,0 +1,28 @@
+# Environment — never commit secrets
+.env
+.env.local
+.env.production
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Next.js build output
+.next/
+out/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+*.tar
+
+# Editor
+.vscode/
+.idea/

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": []
+  },
+  "protectedFiles": [
+    "SANTOSO-PROTOCOL-PROJECT.md",
+    "CLAUDE.md"
+  ]
+}
