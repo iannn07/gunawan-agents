@@ -1,0 +1,229 @@
+---
+alwaysApply: true
+---
+# AINE — Specification-Driven Development Standard
+
+Project-agnostic methodology for AI-native engineering. This rule defines how specifications drive every phase of development — from requirements to deployment. It layers on top of the Gunawan engineering standards (`swe-gunawan-v1`) and governance (`swe-gunawan-governance-v1`) rules.
+
+## 1. Specification-First Principle
+
+The specification is the source of truth — not the code.
+
+- Never write code without a spec section to reference
+- When code and spec disagree, the spec wins and the code must be updated
+- Every prompt to the AI agent should reference the relevant spec section
+- Specs live in `specs/[module-name].md` (or the project's established spec location)
+- Use the DICE format for all feature specifications
+
+If no spec exists for the requested work, **stop and write one first** (or ask the SA to write one). Do not generate code from verbal descriptions or chat-only context.
+
+## 2. DICE Specification Format
+
+Every feature spec follows the DICE structure. Each letter maps to a section the AI agent references during code generation:
+
+| Section | Name | What It Contains | Who Writes It | Who Consumes It |
+| --- | --- | --- | --- | --- |
+| **D** | Data Model | Entity tables, field types, constraints, relationships, audit columns | SA | Backend Dev, QC |
+| **I** | Interface Contract | API endpoints — routes, auth, request/response shapes, status codes, errors | SA | Backend Dev, Frontend Dev |
+| **C** | Constraints & Business Rules | Numbered rules governing behavior, sequencing, permissions, state transitions | SA | All roles |
+| **E** | Evidence (Acceptance Criteria) | Testable Given/When/Then statements — each becomes a test case | SA, QC | QC, All roles |
+
+### How to reference spec sections
+
+When prompting the AI agent or writing code, always cite the spec section:
+
+```
+"Based on spec section D (User Profile entity), generate the migration..."
+"Implement the POST /orders endpoint as defined in spec section I..."
+"The business rule in C-3 says approval is required before update..."
+"Write tests for acceptance criteria E-1 through E-5..."
+```
+
+### Reading a DICE spec
+
+Before implementing anything, the agent must read the full spec and confirm:
+
+1. All entities in Section D have primary keys, audit columns (`created_at`, `updated_at`, `created_by`), and relationship keys
+2. All endpoints in Section I have auth requirements, input validation rules, and error responses
+3. All constraints in Section C are numbered and unambiguous
+4. All criteria in Section E are independently testable (Given/When/Then)
+
+If any section is incomplete, vague, or missing — **stop and flag it** before writing code.
+
+## 3. Development Stage Workflow
+
+Every feature follows this 10-stage pipeline. Each stage has a corresponding Cursor prompt in `.cursor/prompts/`.
+
+```
+[1] Requirements ──→ [2] Task Planning ──→ [3] Database ──→ [4] API Endpoint
+                                                                    │
+[8] Spec Review ←── [7] Fix Error ←── [6] Test Cases ←── [5] Frontend UI
+         │
+         ├──→ [9] Impact Check (before any change to existing code)
+         └──→ [10] AGENTS.md Update (after patterns stabilize)
+```
+
+| Stage | Prompt File | Input | Output | Primary Role |
+| --- | --- | --- | --- | --- |
+| 1. Requirements | `requirements.md` | Business requirement | DICE specification | SA |
+| 2. Task Planning | `task-planning.md` | DICE spec | Dependency-ordered task list | SA |
+| 3. Database | `database.md` | Spec Section D | Migration script | Backend Dev |
+| 4. API Endpoint | `api-endpoint.md` | Spec Section I | Endpoint implementation | Backend Dev |
+| 5. Frontend UI | `frontend-ui.md` | Spec Sections I + E | Component code (all 4 states) | Frontend Dev |
+| 6. Test Cases | `test-cases.md` | Spec Section E | Test suite | QC |
+| 7. Fix Error | `fix-error.md` | Error + spec context | Corrected code | Anyone |
+| 8. Spec Review | `spec-review.md` | Complete spec | Gap analysis | QC / SA |
+| 9. Impact Check | `impact-check.md` | File or entity name | Dependency report | Anyone |
+| 10. AGENTS.md Update | `agents-update.md` | Observed patterns | Updated AGENTS.md | SA / Dev |
+
+### Stage rules
+
+- Stages 1-2 must complete before stages 3-5 begin
+- Stages 3 (Database) and 5 (Frontend UI) can run in parallel once the spec is finalized
+- Stage 6 (Test Cases) can begin as soon as Section E is written — it does not depend on implementation
+- Stage 7 (Fix Error) is used at any time during or after implementation
+- Stages 8-10 are continuous improvement — run them periodically, not just once
+
+## 4. Role Responsibilities
+
+Roles define who owns each stage. The AI agent adapts its output based on the active role.
+
+| Role | Owns Stages | Key Responsibilities |
+| --- | --- | --- |
+| **Solution Architect (SA)** | 1, 2, 8, 10 | Write specs, plan tasks, review for completeness, maintain AGENTS.md |
+| **Backend Developer** | 3, 4 | Database schema, API endpoints, business logic, input validation |
+| **Frontend Developer** | 5 | UI components, state management, API integration, all 4 UI states |
+| **Quality Control (QC)** | 6, 8 | Write test cases from acceptance criteria, review specs for testability |
+| **Anyone** | 7, 9 | Fix errors (with spec reference), check impact before changes |
+
+<!--
+  Example A (Java / Spring Boot):
+  - Backend Dev uses Spring Boot controllers + services + repositories
+  - SA writes specs referencing BR (Business Requirement) numbers
+  - QC generates Postman collections and JUnit tests
+
+  Example B (Next.js / TypeScript):
+  - Backend Dev uses Next.js API routes + server actions + Supabase RPCs
+  - SA writes specs referencing SPEC-[MODULE] identifiers
+  - QC generates Vitest test suites and Playwright E2E tests
+-->
+
+## 5. Spec-Code Traceability
+
+Every code artifact must be traceable back to a spec section. This enables the AI agent (and human reviewers) to verify that what was built matches what was specified.
+
+### Traceability rules
+
+- When generating code, the AI agent must state which spec section it is implementing
+- Database migrations trace to Section D
+- API endpoints trace to Section I
+- Business logic traces to Section C (specific rule numbers)
+- Test cases trace to Section E (specific criteria numbers)
+- UI components trace to the UI states defined in Section I or E
+
+### Example traceability output
+
+When the AI agent generates code, it should produce output like:
+
+```
+Implementing: POST /api/orders
+Spec reference: Section I — POST /orders
+Auth: Requires SHIP_OWNER role (Section C, Rule 2)
+Validation: Required fields — vessel_id, port_id, requested_date (Section I)
+Business rule: Auto-approve if vessel has valid schedule (Section C, Rule 5)
+Tests needed: E-3, E-4, E-7 (Section E)
+```
+
+## 6. UI State Coverage
+
+Every UI component that displays data must handle exactly 4 states. These states must be defined in the spec (Section I or E) and implemented in the component.
+
+| State | What It Shows | When It Applies |
+| --- | --- | --- |
+| **Loading** | Skeleton, spinner, or placeholder | Data is being fetched |
+| **Error** | Error message with retry action | Fetch failed or business rule violation |
+| **Empty** | Contextual empty message with action | Fetch succeeded but returned no data |
+| **Success** | Actual data rendered | Fetch succeeded with data |
+
+### Rules
+
+- The spec must define what each state looks like for every data-driven component
+- The AI agent must implement all 4 states — no component may assume data is always present
+- Error states must show user-friendly messages, never raw error objects
+- Empty states should guide the user toward an action (e.g., "No orders yet. Create your first order.")
+- Loading states should match the layout of the success state (skeleton screens preferred over spinners)
+
+## 7. Acceptance Criteria as Tests
+
+Every item in Section E (Evidence) of the spec becomes a test case. This is not optional — it is the contract between the spec and the implementation.
+
+### Rules
+
+- Each Given/When/Then criterion maps to exactly one test case
+- Test case names must reference the criterion number: `E-1: Given a logged-in user, when they view their profile...`
+- The normal case (happy path) is always tested first
+- Each endpoint must have at least 3 edge-case tests beyond the normal case
+- A feature is not done until every acceptance criterion has a passing test
+
+### Test coverage mapping
+
+```
+Spec Section E                    Test Suite
+─────────────                     ──────────
+E-1: Given ... when ... then ...  → test('E-1: ...')
+E-2: Given ... when ... then ...  → test('E-2: ...')
+E-3: Given ... when ... then ...  → test('E-3: ...')
+...
+```
+
+<!--
+  Example A (Java / Spring Boot):
+  - Tests are JUnit 5 + MockMvc for API endpoints
+  - QC also generates a Postman collection for manual verification
+  - Integration tests run against an H2 in-memory database
+
+  Example B (Next.js / TypeScript):
+  - Tests are Vitest + Testing Library for components
+  - API route tests use the Vitest node environment
+  - E2E tests use Playwright for critical user flows
+-->
+
+## 8. Spec Completeness Checklist
+
+Before any implementation begins, the spec must pass this checklist. The AI agent should run this check when asked to implement a feature.
+
+### Section D — Data Model
+- [ ] Every entity has a primary key (UUID preferred)
+- [ ] Every entity has `created_at`, `updated_at`, `created_by` audit columns
+- [ ] All foreign key relationships are explicitly defined
+- [ ] Field types and constraints (required, unique, max length) are specified
+- [ ] Indexes are identified for frequently queried columns
+
+### Section I — Interface Contract
+- [ ] Every endpoint has an HTTP method and path
+- [ ] Auth requirements are specified (which roles can call it)
+- [ ] Request body / query params are fully typed with required/optional markers
+- [ ] Success response shape is defined with status code
+- [ ] All error responses are listed (401, 403, 404, 400, 409, 500)
+
+### Section C — Constraints & Business Rules
+- [ ] Every rule is numbered (C-1, C-2, ...)
+- [ ] Rules are unambiguous — no "should" or "might", only "must" or "must not"
+- [ ] State transitions are explicit (what triggers them, what blocks them)
+- [ ] Permission rules reference specific roles from the Roles table
+
+### Section E — Evidence (Acceptance Criteria)
+- [ ] Every criterion is numbered (E-1, E-2, ...)
+- [ ] Every criterion follows Given/When/Then format
+- [ ] Every criterion is independently testable
+- [ ] Normal case is covered
+- [ ] At least 3 edge cases per endpoint are covered
+- [ ] Error scenarios (wrong role, missing field, invalid state) are covered
+
+If any item fails, the spec is incomplete. Flag it to the SA before proceeding.
+
+---
+
+Last Updated: 26 April 2026
+Version: 1.0
+Maintained By: Gunawan
